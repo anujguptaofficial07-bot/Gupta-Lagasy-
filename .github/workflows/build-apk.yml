@@ -1,4 +1,4 @@
-name: Build Android APK from Uploaded ZIP
+name: Build Android APK from ZIP
 
 on:
   push:
@@ -13,40 +13,39 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Find ZIP file
+      - name: Find uploaded ZIP
         run: |
           ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "❌ No ZIP file found in repo root."
-            echo "Please upload your app ZIP file in the main/root folder."
+            echo "No ZIP file found in repo root."
             exit 1
           fi
 
-          echo "✅ Found ZIP: $ZIP_FILE"
           echo "ZIP_FILE=$ZIP_FILE" >> $GITHUB_ENV
+          echo "Found ZIP: $ZIP_FILE"
 
       - name: Unzip app
         run: |
+          rm -rf app_source
           mkdir -p app_source
           unzip -q "$ZIP_FILE" -d app_source
-          echo "✅ ZIP extracted"
-          ls -la app_source
+          echo "ZIP extracted"
 
-      - name: Find Android project root
+      - name: Find Android Gradle project
         run: |
-          GRADLEW_PATH=$(find app_source -name "gradlew" -type f | head -n 1)
+          SETTINGS_FILE=$(find app_source -name "settings.gradle" -o -name "settings.gradle.kts" | head -n 1)
 
-          if [ -z "$GRADLEW_PATH" ]; then
-            echo "❌ gradlew not found inside ZIP."
-            echo "Your ZIP may not contain a full Android project."
-            find app_source -maxdepth 3 -type f | head -n 50
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "settings.gradle not found."
+            echo "Showing files:"
+            find app_source -maxdepth 4 -type f | head -n 80
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$GRADLEW_PATH")
-          echo "✅ Android project found: $PROJECT_DIR"
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
           echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          echo "Android project found at: $PROJECT_DIR"
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -54,27 +53,30 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Make Gradle executable
-        run: chmod +x "$PROJECT_DIR/gradlew"
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
 
       - name: Build debug APK
         run: |
           cd "$PROJECT_DIR"
-          ./gradlew --no-daemon assembleDebug
+          gradle --no-daemon assembleDebug
 
       - name: Find APK
         run: |
-          APK_FILE=$(find "$PROJECT_DIR/app/build/outputs/apk/debug" -name "*.apk" | head -n 1)
+          APK_FILE=$(find "$PROJECT_DIR" -path "*/build/outputs/apk/debug/*.apk" | head -n 1)
 
           if [ -z "$APK_FILE" ]; then
-            echo "❌ APK not found after build."
+            echo "APK not found."
+            find "$PROJECT_DIR" -maxdepth 6 -type f -name "*.apk"
             exit 1
           fi
 
-          echo "✅ APK found: $APK_FILE"
           echo "APK_FILE=$APK_FILE" >> $GITHUB_ENV
+          echo "APK found: $APK_FILE"
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Gupta-Legacy-VyaparAI-APK
