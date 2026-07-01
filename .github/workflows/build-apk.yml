@@ -1,4 +1,4 @@
-name: Build Android APK from ZIP
+name: Build Android APK from Uploaded ZIP
 
 on:
   push:
@@ -13,22 +13,42 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Unzip app
+      - name: Find ZIP file
         run: |
-          unzip app.zip -d app_source
-          ls -la app_source
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
 
-      - name: Find project root
-        run: |
-          if [ -f app_source/gradlew ]; then
-            echo "PROJECT_DIR=app_source" >> $GITHUB_ENV
-          else
-            FOUND=$(find app_source -name gradlew -type f | head -n 1)
-            DIR=$(dirname "$FOUND")
-            echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
+          if [ -z "$ZIP_FILE" ]; then
+            echo "❌ No ZIP file found in repo root."
+            echo "Please upload your app ZIP file in the main/root folder."
+            exit 1
           fi
 
-      - name: Setup Java
+          echo "✅ Found ZIP: $ZIP_FILE"
+          echo "ZIP_FILE=$ZIP_FILE" >> $GITHUB_ENV
+
+      - name: Unzip app
+        run: |
+          mkdir -p app_source
+          unzip -q "$ZIP_FILE" -d app_source
+          echo "✅ ZIP extracted"
+          ls -la app_source
+
+      - name: Find Android project root
+        run: |
+          GRADLEW_PATH=$(find app_source -name "gradlew" -type f | head -n 1)
+
+          if [ -z "$GRADLEW_PATH" ]; then
+            echo "❌ gradlew not found inside ZIP."
+            echo "Your ZIP may not contain a full Android project."
+            find app_source -maxdepth 3 -type f | head -n 50
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$GRADLEW_PATH")
+          echo "✅ Android project found: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -40,10 +60,22 @@ jobs:
       - name: Build debug APK
         run: |
           cd "$PROJECT_DIR"
-          ./gradlew assembleDebug
+          ./gradlew --no-daemon assembleDebug
 
-      - name: Upload APK
+      - name: Find APK
+        run: |
+          APK_FILE=$(find "$PROJECT_DIR/app/build/outputs/apk/debug" -name "*.apk" | head -n 1)
+
+          if [ -z "$APK_FILE" ]; then
+            echo "❌ APK not found after build."
+            exit 1
+          fi
+
+          echo "✅ APK found: $APK_FILE"
+          echo "APK_FILE=$APK_FILE" >> $GITHUB_ENV
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Gupta-Legacy-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          name: Gupta-Legacy-VyaparAI-APK
+          path: ${{ env.APK_FILE }}
