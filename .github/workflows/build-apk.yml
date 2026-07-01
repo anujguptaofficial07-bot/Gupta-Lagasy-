@@ -1,0 +1,49 @@
+name: Build Android APK from ZIP
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Unzip app
+        run: |
+          unzip app.zip -d app_source
+          ls -la app_source
+
+      - name: Find project root
+        run: |
+          if [ -f app_source/gradlew ]; then
+            echo "PROJECT_DIR=app_source" >> $GITHUB_ENV
+          else
+            FOUND=$(find app_source -name gradlew -type f | head -n 1)
+            DIR=$(dirname "$FOUND")
+            echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
+          fi
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Make Gradle executable
+        run: chmod +x "$PROJECT_DIR/gradlew"
+
+      - name: Build debug APK
+        run: |
+          cd "$PROJECT_DIR"
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gupta-Legacy-APK
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
